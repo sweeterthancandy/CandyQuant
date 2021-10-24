@@ -133,6 +133,8 @@ def pde_crank_nicolson(
     solution_sequence = [ V_T ]
     head = V_T
 
+    problem_seq = []
+
     for step_index,t_index_and_t in enumerate(list(enumerate(TL))[::-1][1:]):
         t_index,t = t_index_and_t
 
@@ -156,6 +158,7 @@ def pde_crank_nicolson(
         right_value += boundary_cond
 
 
+        problem_seq.append((left_op,right_value))
         sol = scipy.linalg.solve(left_op, right_value)
 
         head = sol
@@ -167,6 +170,8 @@ def pde_crank_nicolson(
             child.solution_sequence = solution_sequence
             child.X = X
             child.TL = TL
+            child.problem_seq = problem_seq
+
 
     return PDESolution()
 
