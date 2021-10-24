@@ -167,10 +167,43 @@ def pde_crank_nicolson(
     
     class PDESolution:
         def __init__(child):
-            child.solution_sequence = solution_sequence
+            child.solution = np.array(solution_sequence[::-1])
             child.X = X
+            child.sol_X = X[1:-1]
+            child.S = np.exp(child.sol_X)
             child.TL = TL
             child.problem_seq = problem_seq
+
+            from scipy.interpolate import interp1d
+            child.smooth_solution = interp1d(child.S, head)
+
+        def plot(child):
+            import matplotlib.pyplot as plt
+            from mpl_toolkits.mplot3d import Axes3D
+            fig = plt.figure(figsize=(20,10))
+            ax = fig.add_subplot(111, projection='3d')
+
+            plot_y_axis = child.TL
+            plot_x_axis = [math.exp(x) for x in child.X[1:-1]]
+
+            xx,yy = np.meshgrid(plot_x_axis,plot_y_axis)
+
+            ax.view_init(30, 233)
+            surf = ax.plot_surface(xx, 
+                                   yy, 
+                                   child.solution, 
+                                   linewidth=0, antialiased=False,
+                                   cmap=plt.cm.coolwarm,
+                                   #cmap=cm.CMRmap
+                                  )
+            plt.show()
+            
+        def __call__(child, x):
+            if type(x) is float:
+                return child.smooth_solution(x)[0]
+            else:
+                return child.smooth_solution(x)
+
 
 
     return PDESolution()
