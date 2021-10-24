@@ -204,7 +204,136 @@ def pde_crank_nicolson(
             else:
                 return child.smooth_solution(x)
 
+        def with_analytic(child, sol_x_min, sol_x_max, f):
+            """
+            some helpfull stuff
+            """
+            child.sol_x_min = sol_x_min
+            child.sol_x_max = sol_x_max
+            child.analytic = f
+
+            def rec_df(sol_step = 0.1):
+                
+                stock_axis = np.arange(child.sol_x_min,child.sol_x_max,sol_step)
+
+                analytic_sol = child.analytic(stock_axis)
+                pde_sol = child.smooth_solution(stock_axis)
+
+                import pandas as pd
+                df = pd.DataFrame({'s':stock_axis,'analytic':analytic_sol, 'pde':pde_sol})
+                df.eval('epsilon = ( analytic - pde ) / analytic',inplace=True)
+                return df
+
+
+            child.rec_df = rec_df
 
 
     return PDESolution()
 
+
+
+def call_option_pde(sol_x_min,sol_x_max,K,tau,r,sigma,
+        domain_stddev=3.0,t_steps=100,x_steps=100,
+        grid_policy = EquidistantSpacial(),
+        stepping_policy = SteppingConstant()):
+    """
+    sol_x_min and sol_x_max are the range of values for which we are interested
+    in the solution, where the PDE domain will be larger
+    """
+
+
+    x_var = sigma**2 * tau
+
+
+    lower_mean = math.log(sol_x_min) + ( r - 0.5*sigma**2)*tau
+    upper_mean = math.log(sol_x_max) + ( r - 0.5*sigma**2)*tau
+    
+    pde_x_min = lower_mean - domain_stddev * math.sqrt(x_var)
+    pde_x_max = upper_mean + domain_stddev * math.sqrt(x_var)   
+
+    def terminal_condition(X):
+        return max(math.exp(X) - K,0)
+
+    def upper_boundary(t,x):
+        """ call option """
+        return math.exp(x) - K * math.exp( -r * (tau - t))
+
+
+    solution = pde_crank_nicolson(
+        r,
+        sigma,
+        tau,
+        pde_x_min,
+        pde_x_max,
+        terminal_condition,
+        upper_boundary,
+        t_steps,
+        x_steps,
+        grid_policy,
+        stepping_policy)
+
+    def analytic(x):
+        import candy_analytic
+        if type(x) is float:
+            return candy_analytic.call_option_analytic(x=x,K=K,tau=tau,r=r,sigma=sigma)
+        else:
+            return [candy_analytic.call_option_analytic(x=_,K=K,tau=tau,r=r,sigma=sigma) for _ in x]
+
+    solution.with_analytic(sol_x_min, sol_x_max, analytic)
+
+    return solution
+
+
+
+
+
+def digital_call_option_pde(sol_x_min,sol_x_max,K,tau,r,sigma,
+        domain_stddev=3.0,t_steps=100,x_steps=100,
+        grid_policy = EquidistantSpacial(),
+        stepping_policy = SteppingConstant()):
+    """
+    sol_x_min and sol_x_max are the range of values for which we are interested
+    in the solution, where the PDE domain will be larger
+    """
+
+
+    x_var = sigma**2 * tau
+
+
+    lower_mean = math.log(sol_x_min) + ( r - 0.5*sigma**2)*tau
+    upper_mean = math.log(sol_x_max) + ( r - 0.5*sigma**2)*tau
+    
+    pde_x_min = lower_mean - domain_stddev * math.sqrt(x_var)
+    pde_x_max = upper_mean + domain_stddev * math.sqrt(x_var)   
+
+    def terminal_condition(x):
+        return 1 if math.exp(x) > K else 0
+
+    def upper_boundary(t,x):
+        """ just discount the payoff of 1 """
+        return math.exp( -r * (tau - t))
+
+
+    solution = pde_crank_nicolson(
+        r,
+        sigma,
+        tau,
+        pde_x_min,
+        pde_x_max,
+        terminal_condition,
+        upper_boundary,
+        t_steps,
+        x_steps,
+        grid_policy,
+        stepping_policy)
+
+    def analytic(x):
+        import candy_analytic
+        if type(x) is float:
+            return candy_analytic.digital_call_option_analytic(x=x,K=K,tau=tau,r=r,sigma=sigma)
+        else:
+            return [candy_analytic.digital_call_option_analytic(x=_,K=K,tau=tau,r=r,sigma=sigma) for _ in x]
+
+    solution.with_analytic(sol_x_min, sol_x_max, analytic)
+
+    return solution
