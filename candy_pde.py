@@ -12,13 +12,14 @@ class EquidistantSpacial:
     def generate_spacial_grid(self, x_min, x_max, x_steps,key_points=None):
         return np.linspace(x_min,x_max,x_steps+2)
     
-class EquidistantWithStrikeSpacial:
+class WithKeyPoints:
+    def __init__(self, impl):
+        self.impl = impl
     def generate_spacial_grid(self, x_min, x_max, x_steps,key_points=None):
-        base_points = EquidistantSpacial().GenerateSpacialGrid(x_min, x_max, x_steps)
-        if key_points is not None:
-            with_key_points = np.concatenate((base_points,key_points))
-        else:
-            with_key_points = base_points
+        base_points = self.impl.generate_spacial_grid(x_min, x_max, x_steps)
+        if key_points is None:
+            return base_points
+        with_key_points = np.concatenate((base_points,key_points))
         return np.array(sorted(with_key_points))
     
 """
@@ -221,7 +222,8 @@ def pde_crank_nicolson(
 
                 import pandas as pd
                 df = pd.DataFrame({'s':stock_axis,'analytic':analytic_sol, 'pde':pde_sol})
-                df.eval('epsilon = ( analytic - pde ) / analytic',inplace=True)
+                df.eval('signed_epsilon = ( analytic - pde ) / analytic',inplace=True)
+                df['epsilon'] = np.abs(df['signed_epsilon'])
                 return df
 
 
@@ -270,7 +272,8 @@ def call_option_pde(sol_x_min,sol_x_max,K,tau,r,sigma,
         t_steps,
         x_steps,
         grid_policy,
-        stepping_policy)
+        stepping_policy,
+        key_points=[math.log(K)])
 
     def analytic(x):
         import candy_analytic
@@ -325,7 +328,8 @@ def digital_call_option_pde(sol_x_min,sol_x_max,K,tau,r,sigma,
         t_steps,
         x_steps,
         grid_policy,
-        stepping_policy)
+        stepping_policy,
+        key_points=[math.log(K)])
 
     def analytic(x):
         import candy_analytic
@@ -335,5 +339,53 @@ def digital_call_option_pde(sol_x_min,sol_x_max,K,tau,r,sigma,
             return [candy_analytic.digital_call_option_analytic(x=_,K=K,tau=tau,r=r,sigma=sigma) for _ in x]
 
     solution.with_analytic(sol_x_min, sol_x_max, analytic)
+
+    return solution
+
+
+
+
+
+
+
+
+def ko_call_option_pde(sol_x_min,barrier,K,tau,r,sigma,
+        domain_stddev=3.0,t_steps=100,x_steps=100,
+        grid_policy = EquidistantSpacial(),
+        stepping_policy = SteppingConstant()):
+    """
+    sol_x_min and sol_x_max are the range of values for which we are interested
+    in the solution, where the PDE domain will be larger
+    """
+
+
+    x_var = sigma**2 * tau
+
+
+    lower_mean = math.log(sol_x_min) + ( r - 0.5*sigma**2)*tau
+    
+    pde_x_min = lower_mean - domain_stddev * math.sqrt(x_var)
+    pde_x_max = math.log(barrier)
+
+    def terminal_condition(X):
+        return max(math.exp(X) - K,0)
+
+    def upper_boundary(t,x):
+        return 0.0
+
+
+    solution = pde_crank_nicolson(
+        r,
+        sigma,
+        tau,
+        pde_x_min,
+        pde_x_max,
+        terminal_condition,
+        upper_boundary,
+        t_steps,
+        x_steps,
+        grid_policy,
+        stepping_policy,
+        key_points=[math.log(K)])
 
     return solution
