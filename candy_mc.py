@@ -3,15 +3,45 @@ import math
 import numpy as np
 
 
+class RiskFactorProxy:
+    def  __init__(self, parent, rf_index):
+        self.parent = parent
+        self.rf_index = rf_index
+
+    @property
+    def index(self): return self.parent.index
+    
+    @property
+    def d_index(self): return self.parent.d_index
+    
+    @property
+    def t(self): return self.parent.t
+    
+    @property
+    def d_t(self): return self.parent.d_t
+    
+    @property
+    def W(self): return self.parent.W[self.rf_index]
+    
+    @property
+    def d_W(self): return self.parent.d_W[self.rf_index]
+    
+
+
         
 class CorrelatedBrownianPath:
-    def __init__(self, index, path_index, t, d_t, W, d_W):
+    def __init__(self, index, d_index, t, d_t, W, d_W):
         self.index = index
-        self.path_index = path_index
+        self.d_index = d_index
         self.t = t
-        self.d_t = d_t
         self.W = W
+        self.d_t = d_t
         self.d_W = d_W
+
+
+    def risk_factor(self, index):
+        return RiskFactorProxy(self, index)
+
 
 class CorrelatedBrownianPathGenerator:
     """
@@ -29,7 +59,7 @@ class CorrelatedBrownianPathGenerator:
     
     def make_one_factor(sigma=1.0):
         corr_mtx = [[sigma**2]]
-        corr = np.array()
+        corr = np.array(corr_mtx)
         A = np.linalg.cholesky(corr)
         return CorrelatedBrownianPathGenerator(A)
     
@@ -92,15 +122,24 @@ class CorrelatedBrownianPathGenerator:
     
 
     def generate(self, T, N):
+        """
+
+        Args:
+            T : The timeline to generate a path for, ie TL = [0,T]
+            N : The number of d_W steps => have N + 1 W_t steps to include W_0 = 0
+
+
+        
+        """
         assert N >= 2
-        d_t = T/(N-1)
+        d_t = T/(N)
         d_t_sqrt = math.sqrt(d_t)
 
         dim = self.cholesky.shape[0]
 
-        d_W = self.generate_dw_matrix(d_t_sqrt, N-1)
+        d_W = self.generate_dw_matrix(d_t_sqrt, N)
 
-        assert d_W.shape == (dim,N-1)
+        assert d_W.shape == (dim,N)
 
         aux = []
         for j in range(dim):
@@ -109,13 +148,25 @@ class CorrelatedBrownianPathGenerator:
 
 
 
-        return CorrelatedBrownianPath(
-            index= range(1,N),
-            path_index=range(0,N),
-            t = np.linspace(0,T,N),
+        result = CorrelatedBrownianPath(
+            index= range(N+1),
+            d_index=range(N),
+            t = np.linspace(0,T,N+1),
             d_t = [d_t]*N,
             W=W,
             d_W=d_W)
+
+
+        
+
+        assert result.d_W.shape == (dim,N)
+        assert len(result.d_t) == N
+        
+        assert result.W.shape == (dim,N+1)
+        assert len(result.t) == N+1
+        
+
+        return result
 
 
 
@@ -129,7 +180,7 @@ class CorrelatedBrownianPathGenerator:
 """ dX = \mu(X)dt + \sigma(X)dW """
 """ dX = a X dt + b X dW """
 class GeometricBrownianMotionKernel:
-    def __init__(self, init=10.0, a=1.0, b=2.0):
+    def __init__(self, init=10.0, a=0.02, b=0.2):
         self.init = init
         self.a = a
         self.b = b
@@ -140,7 +191,7 @@ class GeometricBrownianMotionKernel:
     def d_sigma(self, t, x):
         return self.b
     
-    def AnalyticValue(self, t : float, w : float):
+    def analytic_integral(self, t : float, w : float):
         return self.init * math.exp(
             ( self.a - 0.5 * self.b**2 ) * t +
             self.b * w )
@@ -148,7 +199,7 @@ class GeometricBrownianMotionKernel:
 class AnalyticPathIntegrator:
     def __init__(self, kernel):
         self.kernel = kernel
-    def IntegratePath(self, rf):
+    def integrate(self, rf):
         path = []
         for idx in rf.path_index:
             path.append(
@@ -161,14 +212,16 @@ class AnalyticPathIntegrator:
 class EulerMaruyamaPathIntegrator:
     def __init__(self, kernel):
         self.kernel = kernel
-    def IntegratePath(self, rf):
+    def integrate(self, rf):
         s = self.kernel.init 
         s_seq = [s]
-        for idx in rf.index:
+        for idx in rf.d_index:
             t = rf.t[idx]
             d_s = 0.0
             d_s += self.kernel.mu(t,s)* rf.d_t[idx]
-            d_s += self.kernel.sigma(t,s) * rf.d_W[0][idx]
+            d_s += self.kernel.sigma(t,s) * rf.d_W[idx]
             s += d_s
             s_seq.append(s)
+
+        assert len(s_seq) == len(rf.W)
         return s_seq
