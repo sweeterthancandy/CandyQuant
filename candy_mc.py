@@ -67,7 +67,7 @@ class CorrelatedBrownianPathGenerator:
         self.cholesky = cholesky
         
     def generate(self, T, N):
-        assert N >= 2
+        assert N >= 1
         d_t = T/(N-1)
         d_t_sqrt = math.sqrt(d_t)
         dim = self.cholesky.shape[0]
@@ -131,7 +131,7 @@ class CorrelatedBrownianPathGenerator:
 
         
         """
-        assert N >= 2
+        assert N >= 1
         d_t = T/(N)
         d_t_sqrt = math.sqrt(d_t)
 
@@ -201,10 +201,10 @@ class AnalyticPathIntegrator:
         self.kernel = kernel
     def integrate(self, rf):
         path = []
-        for idx in rf.path_index:
+        for idx in rf.index:
             path.append(
-                self.kernel.AnalyticValue(
-                    rf.t[idx], rf.W[0][idx]
+                self.kernel.analytic_integral(
+                    rf.t[idx], rf.W[idx]
                 )
             )
         return path
@@ -224,4 +224,35 @@ class EulerMaruyamaPathIntegrator:
             s_seq.append(s)
 
         assert len(s_seq) == len(rf.W)
-        return s_seq
+        return np.array(s_seq)
+
+
+
+
+
+def call_option_mc(x,K,tau,r,sigma,num_paths=32000,how='analytic-path'):
+    brownian_motion_gen = CorrelatedBrownianPathGenerator.make_one_factor()
+    kernel = GeometricBrownianMotionKernel(init=x, a=r, b=sigma)
+
+    if how == 'analytic-path': 
+        PATHS_PER_SIM = 1
+        proc_int = AnalyticPathIntegrator(kernel)
+    elif how == 'integrate-path':
+        PATHS_PER_SIM = int(math.sqrt(num_paths)/10)
+        proc_int = EulerMaruyamaPathIntegrator(kernel)
+    else:
+        raise RuntimeError("dont know how={}".format(how))
+
+    # only need the final value
+
+    path_payoffs = []
+    for j in range(num_paths):
+        rf = brownian_motion_gen.generate(tau,PATHS_PER_SIM).risk_factor(0)
+        proc_path = proc_int.integrate(rf)
+        terminal_value = proc_path[-1]
+        payoff = max(terminal_value - K, 0)
+        path_payoffs.append(payoff)
+
+    V_T = np.mean(path_payoffs)
+    discounted_V_T = math.exp(-r * tau ) * V_T
+    return discounted_V_T
