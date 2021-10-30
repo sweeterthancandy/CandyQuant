@@ -3,24 +3,42 @@ import math
 import numpy as np
 
 
+        
+class CorrelatedBrownianPath:
+    def __init__(self, index, path_index, t, d_t, W, d_W):
+        self.index = index
+        self.path_index = path_index
+        self.t = t
+        self.d_t = d_t
+        self.W = W
+        self.d_W = d_W
+
 class CorrelatedBrownianPathGenerator:
+    """
+    This generates correlation browniam motion paths
+    """
     
     def make_two_factor(rho,sigma_1,sigma_2):
-        corr = np.array([[sigma_1**2, rho*sigma_1*sigma_2],[rho*sigma_1*sigma_2, sigma_2**2]])
+        corr_mtx = [
+                [sigma_1**2, rho*sigma_1*sigma_2],
+                [rho*sigma_1*sigma_2, sigma_2**2]
+        ]
+        corr = np.array(corr_mtx)
         A = np.linalg.cholesky(corr)
         return CorrelatedBrownianPathGenerator(A)
     
     def make_one_factor(sigma=1.0):
-        corr = np.array([[sigma**2]])
+        corr_mtx = [[sigma**2]]
+        corr = np.array()
         A = np.linalg.cholesky(corr)
         return CorrelatedBrownianPathGenerator(A)
     
     def __init__(self, cholesky):
         self.cholesky = cholesky
-
         
-    def Generate(self, T, N):
-        d_t = T/N
+    def generate(self, T, N):
+        assert N >= 2
+        d_t = T/(N-1)
         d_t_sqrt = math.sqrt(d_t)
         dim = self.cholesky.shape[0]
         
@@ -39,12 +57,66 @@ class CorrelatedBrownianPathGenerator:
                 child.path_index = range(0,N)
                 child.W = W
                 child.d_t = [d_t] * N
-                child.t = [d_t * idx for idx in range(N)]
+                child.t = np.linspace(0,T,N)
                 child.d_W = d_W
                 
                 
-                
         return BrownianPath()
+
+
+    def generate_dw_matrix(self, d_t_sqrt, size):
+        """
+        This is the important step, generates a dim x size matrix of correlated dw
+        """
+        dim = self.cholesky.shape[0]
+        
+        d_W = np.zeros((dim,size))
+        for index in range(size):
+            Z = np.random.normal(size=dim) 
+            step_d_W = np.dot(self.cholesky,Z)*d_t_sqrt
+            d_W[:,index] = step_d_W
+        return d_W
+    def generate_dw_matrix(self, d_t_sqrt, size):
+        """
+        This is the important step, generates a dim x size matrix of correlated dw
+        """
+        dim = self.cholesky.shape[0]
+        
+        aux = []
+        for index in range(size):
+            Z = np.random.normal(size=dim) 
+            step_d_W = np.dot(self.cholesky,Z)*d_t_sqrt
+            aux.append(step_d_W)
+        return np.array(aux).transpose()
+
+    
+
+    def generate(self, T, N):
+        assert N >= 2
+        d_t = T/(N-1)
+        d_t_sqrt = math.sqrt(d_t)
+
+        dim = self.cholesky.shape[0]
+
+        d_W = self.generate_dw_matrix(d_t_sqrt, N-1)
+
+        assert d_W.shape == (dim,N-1)
+
+        aux = []
+        for j in range(dim):
+            aux.append(np.concatenate(([0],np.cumsum(d_W[j]))))
+        W = np.array(aux)
+
+
+
+        return CorrelatedBrownianPath(
+            index= range(1,N),
+            path_index=range(0,N),
+            t = np.linspace(0,T,N),
+            d_t = [d_t]*N,
+            W=W,
+            d_W=d_W)
+
 
 
 
