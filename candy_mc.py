@@ -230,15 +230,16 @@ class EulerMaruyamaPathIntegrator:
 
 
 
-def call_option_mc(x,K,tau,r,sigma,num_paths=32000,how='analytic-path'):
+def call_option_mc(x,K,tau,r,sigma,num_paths=3200,how='analytic-path',steps_per_path=None):
     brownian_motion_gen = CorrelatedBrownianPathGenerator.make_one_factor()
     kernel = GeometricBrownianMotionKernel(init=x, a=r, b=sigma)
 
     if how == 'analytic-path': 
-        PATHS_PER_SIM = 1
+        steps_per_path = 1
         proc_int = AnalyticPathIntegrator(kernel)
     elif how == 'integrate-path':
-        PATHS_PER_SIM = int(math.sqrt(num_paths)/10)
+        if steps_per_path is None:
+            raise RuntimeError("need steps_per_path")
         proc_int = EulerMaruyamaPathIntegrator(kernel)
     else:
         raise RuntimeError("dont know how={}".format(how))
@@ -247,10 +248,33 @@ def call_option_mc(x,K,tau,r,sigma,num_paths=32000,how='analytic-path'):
 
     path_payoffs = []
     for j in range(num_paths):
-        rf = brownian_motion_gen.generate(tau,PATHS_PER_SIM).risk_factor(0)
+        rf = brownian_motion_gen.generate(tau,steps_per_path).risk_factor(0)
         proc_path = proc_int.integrate(rf)
         terminal_value = proc_path[-1]
         payoff = max(terminal_value - K, 0)
+        path_payoffs.append(payoff)
+
+    V_T = np.mean(path_payoffs)
+    discounted_V_T = math.exp(-r * tau ) * V_T
+    return discounted_V_T
+
+
+def ko_call_option_mc(x,K,tau,r,sigma,barrier,num_paths=3200,steps_per_path=100):
+    
+    brownian_motion_gen = CorrelatedBrownianPathGenerator.make_one_factor()
+    kernel = GeometricBrownianMotionKernel(init=x, a=r, b=sigma)
+    proc_int = EulerMaruyamaPathIntegrator(kernel)
+    path_payoffs = []
+    for j in range(num_paths):
+        rf = brownian_motion_gen.generate(tau,steps_per_path).risk_factor(0)
+        proc_path = proc_int.integrate(rf)
+        
+
+        if np.max(proc_path) > barrier:
+            payoff = 0.0
+        else:
+            terminal_value = proc_path[-1]
+            payoff = max(terminal_value - K, 0)
         path_payoffs.append(payoff)
 
     V_T = np.mean(path_payoffs)
